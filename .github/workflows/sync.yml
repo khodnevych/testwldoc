@@ -36,26 +36,28 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.SOURCE_OWNER }}/${{ env.SOURCE_REPO }}
-          path: ${{ runner.temp }}/_source_repo
+          path: _source_repo
           fetch-depth: 1
 
       - name: Sync files to root (safe)
         run: |
           set -euo pipefail
 
-          if [ ! -d "_source_repo/${SOURCE_PATH}" ]; then
-            echo "ERROR: Source path '_source_repo/${SOURCE_PATH}' does not exist."
-            echo "Check SOURCE_PATH value."
+          SRC="_source_repo/${SOURCE_PATH}"
+
+          if [ ! -d "$SRC" ]; then
+            echo "ERROR: Source path '$SRC' does not exist."
             exit 1
           fi
 
-          # УВАГА: DEST_PATH='.' => корінь репо.
-          # Захищаємо службові каталоги, щоб їх не зачепив --delete
+          # DEST_PATH='.' => корінь репо.
+          # ВИКЛЮЧАЄМО _source_repo, щоб rsync --delete не намагався його видаляти
           rsync -av --delete \
-          --exclude ".git/" \
-          --exclude ".github/" \
-          "${{ runner.temp }}/_source_repo/${SOURCE_PATH}/" \
-          "${DEST_PATH}/"
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "_source_repo/" \
+            "$SRC/" \
+            "${DEST_PATH}/"
 
       - name: Commit and push if changed
         run: |
