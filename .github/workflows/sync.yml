@@ -1,16 +1,15 @@
-name: Sync Source Documentation
+name: Sync GitBook assets from Source repo
 
 on:
   schedule:
-    # кожні 4 години
-    - cron: "0 */4 * * *"
+    - cron: "0 */4 * * *" # кожні 4 години
   workflow_dispatch: {}
 
 permissions:
   contents: write
 
 concurrency:
-  group: sync-source-documentation
+  group: sync-gitbook-assets
   cancel-in-progress: false
 
 jobs:
@@ -18,41 +17,45 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      # TODO: заміни на реальні назви
       SOURCE_OWNER: Unlaik
       SOURCE_REPO: GitBookMagazine
-      SOURCE_BRANCH: master
 
-      # що копіюємо з source repo
+      # що тягнемо з source repo
       SOURCE_PATH: .gitbook/assets
 
-      # куди кладемо у PSP_Documentation repo в корінь
-      DEST_PATH: . 
+      # куди кладемо у target repo (корінь)
+      DEST_PATH: .
 
     steps:
-      - name: Checkout PSP_Documentation
+      - name: Checkout target repo (this repo)
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: Checkout source repo (public)
+      - name: Checkout source repo (public, default branch)
         uses: actions/checkout@v4
         with:
           repository: ${{ env.SOURCE_OWNER }}/${{ env.SOURCE_REPO }}
           path: _source_repo
           fetch-depth: 1
 
-      - name: Sync files (rsync mirror)
+      - name: Sync files to root (safe)
         run: |
           set -euo pipefail
-          mkdir -p "${DEST_PATH}"
 
-          # Дзеркалимо SOURCE_PATH -> DEST_PATH
+          if [ ! -d "_source_repo/${SOURCE_PATH}" ]; then
+            echo "ERROR: Source path '_source_repo/${SOURCE_PATH}' does not exist."
+            echo "Check SOURCE_PATH value."
+            exit 1
+          fi
+
+          # УВАГА: DEST_PATH='.' => корінь репо.
+          # Захищаємо службові каталоги, щоб їх не зачепив --delete
           rsync -av --delete \
-          --exclude ".git/" \
-          --exclude ".github/" \
-          "_source_repo/${SOURCE_PATH}/" \
-          "${DEST_PATH}/"
+            --exclude ".git/" \
+            --exclude ".github/" \
+            "_source_repo/${SOURCE_PATH}/" \
+            "${DEST_PATH}/"
 
       - name: Commit and push if changed
         run: |
@@ -67,8 +70,8 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          git commit -m "chore(sync): update docs from ${SOURCE_OWNER}/${SOURCE_REPO}"
+          git commit -m "chore(sync): update assets from ${SOURCE_OWNER}/${SOURCE_REPO}"
 
-          # пушимо через PAT (secret)
+          # пушимо через PAT (секрет SYNC_TOKEN)
           git remote set-url origin "https://x-access-token:${{ secrets.SYNC_TOKEN }}@github.com/${{ github.repository }}.git"
           git push origin HEAD:${{ github.ref_name }}
