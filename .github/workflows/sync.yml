@@ -21,7 +21,7 @@ jobs:
       # TODO: заміни на реальні назви
       SOURCE_OWNER: Unlaik
       SOURCE_REPO: GitBookMagazine
-      SOURCE_BRANCH: main
+      SOURCE_BRANCH: master
 
       # що копіюємо з source repo
       SOURCE_PATH: .gitbook/assets
@@ -39,7 +39,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.SOURCE_OWNER }}/${{ env.SOURCE_REPO }}
-          ref: ${{ env.SOURCE_BRANCH }}
           path: _source_repo
           fetch-depth: 1
 
@@ -50,8 +49,10 @@ jobs:
 
           # Дзеркалимо SOURCE_PATH -> DEST_PATH
           rsync -av --delete \
-            "_source_repo/${SOURCE_PATH}/" \
-            "${DEST_PATH}/"
+          --exclude ".git/" \
+          --exclude ".github/" \
+          "_source_repo/${SOURCE_PATH}/" \
+          "${DEST_PATH}/"
 
       - name: Commit and push if changed
         run: |
