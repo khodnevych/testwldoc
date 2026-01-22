@@ -1,36 +1,80 @@
-name: Automated Repo Sync (A -> B)
+name: Sync assets
 
 on:
   schedule:
-    - cron: '0 4 * * *'
-  workflow_dispatch:
-  
+    - cron: "0 */4 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
 jobs:
   sync_files:
     runs-on: ubuntu-latest
-    
+
+    env:
+      SOURCE_REPO_URL: https://github.com/Unlaik/GitBookMagazine.git
+      SOURCE_PATH: .gitbook/assets
+      DEST_PATH: .   # корінь
+
     steps:
-      - name: ⬇️ Checkout Repo B (Призначення)
+      - name: Checkout target repo
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.SYNC_TOKEN }}
-          
-      - name: ⬇️ Clone Repo A (Джерело)
-        # Клонуємо Repo A у тимчасову папку
+          fetch-depth: 0
+
+      - name: Clone source repo (public)
         run: |
-          git clone https://${{ secrets.SYNC_TOKEN }}@github.com/Unlaik/GitBookMagazine.git repo-a-source-temp
-          
-      - name: 🔄 Копіювання та перезапис папок docs і reference
-        # Копіюємо лише вказані папки. Ключове слово 'cp -r' копіює рекурсивно.
+          set -euo pipefail
+          git clone --depth 1 "$SOURCE_REPO_URL" repo-a-source-temp
+
+      - name: Sync files (copy contents, not folder)
         run: |
-          # Копіювання папки docs
-          cp -r repo-a-source-temp/.gitbook/assets .
-          # Видалення тимчасової папки
+          set -euo pipefail
+
+          SRC="repo-a-source-temp/${SOURCE_PATH}"
+          if [ ! -d "$SRC" ]; then
+            echo "ERROR: Source path '$SRC' does not exist"
+            ls -la repo-a-source-temp || true
+            exit 1
+          fi
+
+          # Копіюємо ВМІСТ assets у DEST_PATH
+          # Важливо: ".": копіює контент, а не саму папку assets
+          rsync -av --delete \
+            --exclude ".git/" \
+            --exclude ".github/" \
+            --exclude "repo-a-source-temp/" \
+            "$SRC/." \
+            "${DEST_PATH}/"
+
           rm -rf repo-a-source-temp
-          
-      - name: 🚀 Фіксація та Пуш змін до Repo B
-        uses:  stefanzweifel/git-auto-commit-action@v5
-        with:
-          token: ${{ secrets.SYNC_TOKEN }}
-          commit_message: "Sync: Automated update of docs and reference from Repo A"
-          branch: v1.0
+
+      - name: Debug status
+        run: |
+          echo "=== git status ==="
+          git status --porcelain || true
+          echo "=== ls root ==="
+          ls -la || true
+
+      - name: Commit & push if changed
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "chore(sync): update assets from source repo"
+
+          # Пуш через PAT (SYNC_TOKEN)
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
