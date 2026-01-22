@@ -15,7 +15,7 @@ jobs:
     env:
       SOURCE_REPO_URL: https://github.com/Unlaik/GitBookMagazine.git
       SOURCE_PATH: .
-      DEST_PATH: .   # корінь
+      DEST_PATH: . # корінь
 
     steps:
       - name: Checkout target repo
@@ -23,14 +23,25 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Clone source repo (public)
+      - name: Sync + commit + push (safe)
+        env:
+          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
         run: |
           set -euo pipefail
-          git clone --depth 1 "$SOURCE_REPO_URL" repo-a-source-temp
 
-      - name: Sync files (copy contents, not folder)
-        run: |
-          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          BRANCH="${GITHUB_REF_NAME}"
+
+          # 1) Sync with remote on clean tree
+          git fetch origin "${BRANCH}"
+          git rebase "origin/${BRANCH}"
+
+          # 2) Pull source repo and sync files
+          rm -rf repo-a-source-temp
+          git clone --depth 1 "$SOURCE_REPO_URL" repo-a-source-temp
 
           SRC="repo-a-source-temp/${SOURCE_PATH}"
           if [ ! -d "$SRC" ]; then
@@ -39,8 +50,6 @@ jobs:
             exit 1
           fi
 
-          # Копіюємо ВМІСТ assets у DEST_PATH
-          # Важливо: ".": копіює контент, а не саму папку assets
           rsync -av --delete \
             --exclude ".git/" \
             --exclude ".github/" \
@@ -50,36 +59,26 @@ jobs:
 
           rm -rf repo-a-source-temp
 
-      - name: Debug status
-        run: |
-          echo "=== git status ==="
-          git status --porcelain || true
-          echo "=== ls root ==="
-          ls -la || true
-          
-      - name: Commit & push if changed (rebase)
-        env:
-          GH_TOKEN: ${{ secrets.SYNC_TOKEN }}
-        run: |
-          set -euo pipefail
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-          # auth for push
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-
-          # sync with remote to avoid non-fast-forward
-          git fetch origin "${GITHUB_REF_NAME}"
-          git rebase "origin/${GITHUB_REF_NAME}"
-
+          # 3) Commit if changed
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "chore(sync): update assets from source repo"
+          git commit -m "chore(sync): update from source repo"
 
-          # push after rebase
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          # 4) Rebase again in case remote moved while we were working
+          git fetch origin "${BRANCH}"
+          git rebase "origin/${BRANCH}"
+
+          # 5) Push
+          git push origin "HEAD:${BRANCH}"
+
+      - name: Debug status
+        if: always()
+        run: |
+          echo "=== git status ==="
+          git status --porcelain || true
+          echo "=== ls root ==="
+          ls -la || true
