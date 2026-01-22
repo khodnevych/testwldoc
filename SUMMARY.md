@@ -1,6 +1,6 @@
 # Table of contents
 
-* [Welcome to Magazite](README.md)
+* [Welcome to Merchant](README.md)
 
 ## Getting Started
 
