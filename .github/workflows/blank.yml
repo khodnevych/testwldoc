@@ -1,0 +1,36 @@
+name: Automated Repo Sync (A -> B)
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+  
+jobs:
+  sync_files:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: ⬇️ Checkout Repo B (Призначення)
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+          
+      - name: ⬇️ Clone Repo A (Джерело)
+        # Клонуємо Repo A у тимчасову папку
+        run: |
+          git clone https://${{ secrets.SYNC_TOKEN }}@github.com/Unlaik/GitBookMagazine.git repo-a-source-temp
+          
+      - name: 🔄 Копіювання та перезапис папок docs і reference
+        # Копіюємо лише вказані папки. Ключове слово 'cp -r' копіює рекурсивно.
+        run: |
+          # Копіювання папки docs
+          cp -r repo-a-source-temp/.gitbook/assets .
+          # Видалення тимчасової папки
+          rm -rf repo-a-source-temp
+          
+      - name: 🚀 Фіксація та Пуш змін до Repo B
+        uses:  stefanzweifel/git-auto-commit-action@v5
+        with:
+          token: ${{ secrets.SYNC_TOKEN }}
+          commit_message: "Sync: Automated update of docs and reference from Repo A"
+          branch: v1.0
